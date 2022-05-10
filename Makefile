@@ -16,6 +16,8 @@ CONTAINER_NAME := make_build_example
 # running container.
 TAG := $(CONTAINER_NAME):latest
 
+CONTAINER_ID != docker container inspect "$(CONTAINER_NAME)" --format="{{.ID}}" 2>/dev/null
+
 # Get the name of the directory holding this Makefile.
 WORKSPACE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 # Remove trailing slash from WORKSPACE.
@@ -33,8 +35,11 @@ BUILD_OPTS = -t $(TAG) \
 	--build-arg gid=$(GID) \
 	-f Dockerfile $(WORKSPACE)/context
 
-# Default opts are to run -i(nteractive) and with -t(ty). To run in background,
-# explicitly add the -d(etach) option to the relevant target.
+# Default opts are to run -i(nteractive) with -t(ty). To run the container in
+# the background, explicitly add the -d(etach) option to the relevant target.
+# We also need the '--rm' option to simplify container state management in our
+# targets - our containers should only exist in a 'running' state - not
+# 'stopped', 'paused', 'created' or anything else.
 RUN_OPTS =  --rm -it --network=host \
             --env BUILD_TIME="$(shell date --iso-8601=seconds)"
 
@@ -63,11 +68,12 @@ help:
 	@echo ''
 
 show-vars:
-	@echo "TAG:        '$(TAG)'"
-	@echo "WORKSPACE:  '$(WORKSPACE)'"
-	@echo "SHELL_CMDS: '$(SHELL_CMDS)'"
-	@echo "UID:        '$(UID)'"
-	@echo "GID:        '$(GID)'"
+	@echo "TAG:          '$(TAG)'"
+	@echo "CONTAINER ID: '$(CONTAINER_ID)'"
+	@echo "WORKSPACE:    '$(WORKSPACE)'"
+	@echo "SHELL_CMDS:   '$(SHELL_CMDS)'"
+	@echo "UID:          '$(UID)'"
+	@echo "GID:          '$(GID)'"
 	@echo "Build options:\n\t'$(BUILD_OPTS)'"
 	@echo "Run options:\n\t'$(RUN_OPTS)'"
 
@@ -81,23 +87,31 @@ rebuild:
 
 start:
 # Run as a (background) service, or print ID if already running.
-	@docker ps -a --no-trunc --filter name=^/$(CONTAINER_NAME)$$ | grep $(CONTAINER_NAME) 1>/dev/null \
-	&& docker ps -a --no-trunc --filter name=^/$(CONTAINER_NAME)$$ --format "{{.ID}}" \
-	|| docker run -d $(RUN_OPTS) \
-		--name $(CONTAINER_NAME) \
-		$(TAG)
+    ifdef CONTAINER_ID
+        # Already running, so print out its ID
+		$(info The container "$(CONTAINER_NAME)" is already running ($(CONTAINER_ID)).)
+    else
+        # Not running - so start it. Docker will return container's ID if start  succeeds.
+		@docker run -d $(RUN_OPTS) --name $(CONTAINER_NAME) $(TAG)
+    endif
 
-attach:
+attach: start
 # Attach to a container running in the background.
-	@docker ps -a --no-trunc --filter name=^/$(CONTAINER_NAME)$$ | grep $(CONTAINER_NAME) 1>/dev/null \
-	&& docker exec -it $(CONTAINER_NAME) /bin/sh
+	@docker exec -it $(CONTAINER_NAME) /bin/sh
 
 status:
 # Retrieve the container's logs, to get some idea of how it's running
-	@docker logs $(CONTAINER_NAME)
+    ifdef CONTAINER_ID
+		@docker logs $(CONTAINER_NAME)
+    else
+		$(warning The container "$(CONTAINER_NAME)" either no longer exists or hasn't been started.)
+    endif
 
 stop:
 # Stop running containers.
-	@docker stop $(CONTAINER_NAME) 2>/dev/null \
-	&& echo 'Running container for "$(TAG)" stopped.' \
-	|| echo 'No running container for "$(TAG)" found.'
+    ifdef CONTAINER_ID
+		@docker stop $(CONTAINER_NAME)
+		$(info Running container for "$(TAG)" stopped.)
+    else
+		$(warning No running container for "$(TAG)" found.)
+    endif
