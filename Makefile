@@ -11,9 +11,8 @@
 # All our targets are phony (no files to check).
 .PHONY: shell help show-vars build rebuild start status attach stop
 
+# We use $(CONTAINER_NAME) for the names of both the Docker image and the running container.
 CONTAINER_NAME := make_build_example
-# We use $(CONTAINER_NAME) for the names of both the Docker image and the
-# running container.
 TAG := $(CONTAINER_NAME):latest
 
 CONTAINER_ID != docker container inspect "$(CONTAINER_NAME)" --format="{{.ID}}" 2>/dev/null
@@ -33,6 +32,7 @@ BUILD_OPTS = -t $(TAG) \
 	--force-rm \
 	--build-arg uid=$(UID) \
 	--build-arg gid=$(GID) \
+	--build-arg build_time="$(shell date --iso-8601=seconds)" \
 	-f Dockerfile $(WORKSPACE)/context
 
 # Default opts are to run -i(nteractive) with -t(ty). To run the container in
@@ -41,7 +41,7 @@ BUILD_OPTS = -t $(TAG) \
 # targets - our containers should only exist in a 'running' state - not
 # 'stopped', 'paused', 'created' or anything else.
 RUN_OPTS =  --rm -it --network=host \
-            --env BUILD_TIME="$(shell date --iso-8601=seconds)"
+            --env START_TIME="$(shell date --iso-8601=seconds)"
 
 shell:
 ifeq ($(SHELL_CMDS),)
@@ -86,11 +86,8 @@ rebuild:
 	@docker build --no-cache $(BUILD_OPTS)
 
 start:
-# Run as a (background) service, or print ID if already running.
-    ifdef CONTAINER_ID
-        # Already running, so print out its ID
-		$(info The container "$(CONTAINER_NAME)" is already running ($(CONTAINER_ID)).)
-    else
+# Start container running (if not already) as background service.
+    ifndef CONTAINER_ID
         # Not running - so start it. Docker will return container's ID if start  succeeds.
 		@docker run -d $(RUN_OPTS) --name $(CONTAINER_NAME) $(TAG)
     endif
@@ -108,10 +105,10 @@ status:
     endif
 
 stop:
-# Stop running containers.
+# Stop running container.
     ifdef CONTAINER_ID
-		@docker stop $(CONTAINER_NAME)
-		$(info Running container for "$(TAG)" stopped.)
+		@docker stop $(CONTAINER_NAME) 2>/dev/null \
+		&& echo 'Running container for "$(TAG)" stopped.'
     else
 		$(warning No running container for "$(TAG)" found.)
     endif

@@ -7,6 +7,7 @@ ARG user=image-user
 ARG group=image-group
 ARG uid=1000
 ARG gid=1000
+ARG build_time
 
 ENV INSTALL_DIR=/opt/my-package
 
@@ -43,6 +44,7 @@ CMD ["start"]
 
 COPY --chown="${user}:${group}" ./package ${INSTALL_DIR}
 ENV PATH=${INSTALL_DIR}:${PATH}
+ENV BUILD_TIME=${build_time}
 
 WORKDIR ${INSTALL_DIR}
 USER ${user}
